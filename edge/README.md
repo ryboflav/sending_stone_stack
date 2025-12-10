@@ -47,3 +47,16 @@ python -m tools.audio_ws_simulator tests/data/audio/test_speech.wav --chunk-ms 8
 ```
 
 The simulator converts the clip to 16 kHz mono PCM16, streams frames to `/ws/audio`, triggers `speech_end`, and prints any control/TTS responses from the service. Per-stage timing metrics are logged on the backend so you can quantify latency end-to-end. See `docs/local_ws_simulator.md` for details.
+
+## LLM configuration (OpenRouter)
+
+1. Install dependencies after pulling updates:
+   ```
+   pip install -r requirements.txt
+   ```
+2. Copy `.env.example` to `.env` and set the private values (the `.env` file is gitignored):
+   ```
+   cp .env.example .env
+   ```
+3. Populate `OPENROUTER_API_KEY` with your key and (optionally) override `OPENROUTER_MODEL`, `OPENROUTER_REFERRER`, or `OPENROUTER_APP_TITLE`.
+4. Start the server; the backend will load the API key at startup and `generate_reply` will call OpenRouter’s `/chat/completions` endpoint for every utterance. If the key is missing or a request fails, the system falls back to an “Echoing your words” response so the rest of the pipeline keeps working.
