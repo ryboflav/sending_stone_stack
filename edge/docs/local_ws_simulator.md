@@ -12,4 +12,4 @@
    python -m tools.audio_ws_simulator tests/data/audio/test_speech.wav --chunk-ms 80
    ```
 
-3. Watch the console for control messages and TTS byte counts. The FastAPI server logs print per-stage timing metrics (STT/LLM/TTS + total) for each utterance.
+3. Watch the console for control messages and TTS byte counts. The script writes any synthesized reply to `tests/data/audio/output.wav` (16 kHz mono WAV) so you can listen afterward, and the FastAPI server logs print per-stage timing metrics (STT/LLM/TTS + total) for each utterance.

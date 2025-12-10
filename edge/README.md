@@ -46,7 +46,7 @@ Run the edge server (for example via `uvicorn speaking_stone_edge.main:app --rel
 python -m tools.audio_ws_simulator tests/data/audio/test_speech.wav --chunk-ms 80
 ```
 
-The simulator converts the clip to 16 kHz mono PCM16, streams frames to `/ws/audio`, triggers `speech_end`, and prints any control/TTS responses from the service. Per-stage timing metrics are logged on the backend so you can quantify latency end-to-end. See `docs/local_ws_simulator.md` for details.
+The simulator converts the clip to 16 kHz mono PCM16, streams frames to `/ws/audio`, triggers `speech_end`, writes the synthesized reply to `tests/data/audio/output.wav`, and prints any control/TTS responses from the service. Per-stage timing metrics are logged on the backend so you can quantify latency end-to-end. See `docs/local_ws_simulator.md` for details.
 
 ## LLM configuration (OpenRouter)
 
@@ -60,3 +60,13 @@ The simulator converts the clip to 16 kHz mono PCM16, streams frames to `/ws/aud
    ```
 3. Populate `OPENROUTER_API_KEY` with your key and (optionally) override `OPENROUTER_MODEL`, `OPENROUTER_REFERRER`, or `OPENROUTER_APP_TITLE`.
 4. Start the server; the backend will load the API key at startup and `generate_reply` will call OpenRouter’s `/chat/completions` endpoint for every utterance. If the key is missing or a request fails, the system falls back to an “Echoing your words” response so the rest of the pipeline keeps working.
+
+## TTS configuration (Piper)
+
+1. Install the new dependency if you haven’t already:
+   ```
+   pip install -r requirements.txt
+   ```
+2. Download a Piper voice package (both `.onnx` and `.onnx.json`) from the [Piper releases](https://github.com/rhasspy/piper/releases) page and place it somewhere inside the repo, e.g. `tests/data/tts/en_US-amy-low.onnx`.
+3. Update `.env` with `PIPER_MODEL_PATH` (and optionally `PIPER_CONFIG_PATH`, `PIPER_SPEAKER_ID`, `PIPER_USE_CUDA`). See `.env.example` for the variables.
+4. Restart the FastAPI server; `speaking_stone_edge.tts_module` loads the Piper model once at startup and converts replies into 16 kHz PCM16 bytes. If the model isn’t configured or synthesis fails, we fall back to placeholder bytes so the websocket contract stays intact.

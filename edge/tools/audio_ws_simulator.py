@@ -42,6 +42,12 @@ def _parse_args() -> argparse.Namespace:
         default=2.0,
         help="Seconds to wait after sending speech_end before closing",
     )
+    parser.add_argument(
+        "--output-wav",
+        type=Path,
+        default=Path("tests/data/audio/output.wav"),
+        help="Where to save the synthesized PCM as a WAV file",
+    )
     return parser.parse_args()
 
 
@@ -118,7 +124,19 @@ def _chunk_bytes(data: bytes, chunk_size: int) -> list[bytes]:
     return [data[i : i + chunk_size] for i in range(0, len(data), chunk_size)]
 
 
-async def _listen_for_responses(ws: websockets.WebSocketClientProtocol) -> None:
+def _write_wav(path: Path, pcm: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with wave.open(str(path), "wb") as wav:
+        wav.setnchannels(TARGET_CHANNELS)
+        wav.setsampwidth(TARGET_SAMPLE_WIDTH)
+        wav.setframerate(TARGET_SAMPLE_RATE)
+        wav.writeframes(pcm)
+
+
+async def _listen_for_responses(
+    ws: websockets.WebSocketClientProtocol, output_path: Path
+) -> None:
+    collected = bytearray()
     try:
         while True:
             message = await ws.recv()
@@ -126,8 +144,15 @@ async def _listen_for_responses(ws: websockets.WebSocketClientProtocol) -> None:
                 print(f"<< text: {message}")
             else:
                 print(f"<< received {len(message)} bytes (likely TTS chunk)")
+                collected.extend(message)
     except websockets.ConnectionClosed:
         print("<< connection closed by server")
+    finally:
+        if collected:
+            _write_wav(output_path, bytes(collected))
+            print(f"<< wrote synthesized audio to {output_path}")
+        else:
+            print("<< no synthesized audio received; nothing written")
 
 
 async def _send_audio_frames(
@@ -163,11 +188,16 @@ async def _run(args: argparse.Namespace) -> None:
 
     print(f"Connecting to {args.url} ...")
     async with websockets.connect(args.url, ping_interval=None) as ws:
-        listener = asyncio.create_task(_listen_for_responses(ws))
-        await _send_audio_frames(ws, pcm, sample_rate, channels, bits_per_sample, args.chunk_ms)
-        await asyncio.sleep(args.post_delay)
-        await ws.close()
-        await listener
+        listener = asyncio.create_task(_listen_for_responses(ws, args.output_wav))
+        try:
+            await _send_audio_frames(ws, pcm, sample_rate, channels, bits_per_sample, args.chunk_ms)
+            await asyncio.sleep(args.post_delay)
+        finally:
+            await ws.close()
+            try:
+                await listener
+            except asyncio.CancelledError:
+                pass
 
 
 def main() -> None:
