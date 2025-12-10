@@ -1,0 +1,11 @@
+version: "3.9"
+services:
+  edge-server:
+    build:
+      context: ..
+      dockerfile: edge/.devcontainer/Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ..:/workspaces/speaking-stone-stack
+    command: ["uvicorn", "speaking_stone_edge.main:app", "--host", "0.0.0.0", "--port", "8000"]

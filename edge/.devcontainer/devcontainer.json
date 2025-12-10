@@ -1,0 +1,32 @@
+{
+  "name": "Speaking Stone Edge",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  "workspaceFolder": "/workspaces/speaking-stone-stack",
+  "workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/speaking-stone-stack,type=bind,consistency=cached",
+  "postCreateCommand": "pip install -r requirements.txt",
+  "settings": {
+    "terminal.integrated.defaultProfile.linux": "bash"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-azuretools.vscode-docker",
+        "openai.chatgpt",
+        "github.copilot-chat",
+        "github.copilot"
+      ]
+    }
+  },
+  "forwardPorts": [8000],
+  "remoteUser": "devenv",
+  "runArgs": ["--init", "--network=host"],
+  "overrideCommand": true,
+  "containerEnv": {
+    "PYTHONUNBUFFERED": "1"
+  }
+}

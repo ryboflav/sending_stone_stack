@@ -1,0 +1,2 @@
+source /home/ryan/sending_stone_stack/firmware/build/bootloader/gdbinit/symbols
+source /home/ryan/sending_stone_stack/firmware/build/bootloader/gdbinit/connect
