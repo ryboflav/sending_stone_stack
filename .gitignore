@@ -189,6 +189,7 @@ compile_commands.json
 
 # ESP-IDF / build artifacts
 firmware/build/
+firmware/main/Kconfig.projbuild
 firmware/sdkconfig
 firmware/sdkconfig.old
 
