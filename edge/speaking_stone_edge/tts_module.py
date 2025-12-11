@@ -1,121 +1,88 @@
-"""Text-to-speech synthesis via Piper."""
+"""Text-to-speech synthesis via ElevenLabs (official Python SDK)."""
 
 from __future__ import annotations
 
-import io
 import logging
 import os
-import wave
 from functools import lru_cache
-from pathlib import Path
 from typing import Optional
-
-import numpy as np
-
-try:
-    from piper import PiperVoice
-except ImportError:  # pragma: no cover - dependency missing only in constrained envs
-    PiperVoice = None  # type: ignore[misc,assignment]
 
 logger = logging.getLogger(__name__)
 
-PIPER_MODEL_PATH = os.getenv("PIPER_MODEL_PATH")
-PIPER_CONFIG_PATH = os.getenv("PIPER_CONFIG_PATH")
-PIPER_SPEAKER_ID = os.getenv("PIPER_SPEAKER_ID")
-PIPER_USE_CUDA = os.getenv("PIPER_USE_CUDA", "false").lower() in ("1", "true", "yes", "on")
+ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
+ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")  # Rachel (default demo voice)
+ELEVENLABS_MODEL_ID = os.getenv("ELEVENLABS_MODEL_ID")  # optional; let API default if unset
+ELEVENLABS_API_HOST = os.getenv("ELEVENLABS_API_HOST", "https://api.elevenlabs.io")
 TARGET_SAMPLE_RATE = 16000
 TARGET_CHANNELS = 1
 TARGET_SAMPLE_WIDTH = 2  # bytes (16-bit)
 
 
 def _placeholder_response(text: str) -> bytes:
-    return f"[tts-placeholder for '{text}']".encode()
+    logger.info("tts_placeholder len_chars=%d", len(text))
+    # Return 0.5s of silence at 16 kHz mono, 16-bit to avoid loud static in players.
+    samples = int(TARGET_SAMPLE_RATE * 0.5)
+    return b"\x00\x00" * samples
 
 
 @lru_cache(maxsize=1)
-def _load_voice() -> Optional[PiperVoice]:
-    if PiperVoice is None:
-        logger.warning("piper-tts not installed; using placeholder TTS.")
-        return None
-    if not PIPER_MODEL_PATH:
-        logger.warning("PIPER_MODEL_PATH not set; using placeholder TTS.")
-        return None
-
-    model_path = Path(PIPER_MODEL_PATH)
-    if not model_path.exists():
-        logger.error("Piper model path does not exist: %s", model_path)
-        return None
-
-    config_path = Path(PIPER_CONFIG_PATH) if PIPER_CONFIG_PATH else None
-    if config_path and not config_path.exists():
-        logger.warning("Piper config path missing: %s (continuing without it)", config_path)
-        config_path = None
-
-    logger.info("Loading Piper voice from %s", model_path)
+def _get_client():
+    """Lazy-load ElevenLabs client."""
     try:
-        voice = PiperVoice.load(str(model_path), config_path=str(config_path) if config_path else None, use_cuda=PIPER_USE_CUDA)
-        return voice
+        from elevenlabs.client import ElevenLabs
+    except Exception as exc:  # pragma: no cover - import error in minimal env
+        logger.error("Failed to import ElevenLabs SDK: %s", exc)
+        return None
+
+    if not ELEVENLABS_API_KEY:
+        logger.warning("ELEVENLABS_API_KEY not set; using placeholder TTS")
+        return None
+
+    try:
+        return ElevenLabs(api_key=ELEVENLABS_API_KEY, base_url=ELEVENLABS_API_HOST)
     except Exception as exc:  # noqa: BLE001
-        logger.error("Unable to load Piper model: %s", exc)
+        logger.error("Failed to initialize ElevenLabs client: %s", exc)
         return None
 
 
-def _synthesize_with_piper(text: str) -> Optional[bytes]:
-    voice = _load_voice()
-    if voice is None:
+def _synthesize_with_elevenlabs(text: str) -> Optional[bytes]:
+    client = _get_client()
+    if client is None:
         return None
 
-    # Resolve speaker selection: only pass sid for multi-speaker models.
-    speaker_id = None
     try:
-        max_speakers = getattr(voice.config, "num_speakers", 1)
-    except Exception:
-        max_speakers = 1
-    if max_speakers > 1:
-        if PIPER_SPEAKER_ID is not None:
-            try:
-                speaker_id = int(PIPER_SPEAKER_ID)
-            except ValueError:
-                logger.warning("Invalid PIPER_SPEAKER_ID=%s; ignoring.", PIPER_SPEAKER_ID)
-        else:
-            speaker_id = 0  # default to first speaker for multi-speaker models
-
-    try:
-        buffer = io.BytesIO()
-        with wave.open(buffer, "wb") as wav_file:
-            channels = getattr(voice.config, "audio", None)
-            channels = getattr(channels, "num_channels", TARGET_CHANNELS)
-            sample_rate = getattr(voice.config, "sample_rate", TARGET_SAMPLE_RATE)
-            wav_file.setnchannels(channels or TARGET_CHANNELS)
-            wav_file.setsampwidth(TARGET_SAMPLE_WIDTH)
-            wav_file.setframerate(sample_rate or TARGET_SAMPLE_RATE)
-            logger.info(
-                "Piper synth params sample_rate=%s channels=%s speaker_id=%s",
-                sample_rate,
-                channels,
-                speaker_id,
-            )
-            if speaker_id is None:
-                voice.synthesize(text, wav_file)
-            else:
-                voice.synthesize(text, wav_file, speaker_id=speaker_id)
-        pcm_with_header = buffer.getvalue()
+        response = client.text_to_speech.convert(
+            voice_id=ELEVENLABS_VOICE_ID,
+            optimize_streaming_latency="0",  # lowest latency
+            model_id=ELEVENLABS_MODEL_ID,
+            output_format=f"pcm_{TARGET_SAMPLE_RATE}",
+            text=text,
+        )
     except Exception as exc:  # noqa: BLE001
-        logger.error("Piper synthesis failed: %s", exc)
+        logger.error("ElevenLabs synthesis failed: %s", exc)
         return None
 
-    # The BytesIO now contains a WAV header + PCM. Strip the header to send raw PCM.
-    header_size = 44  # standard PCM WAV header size
-    pcm = pcm_with_header[header_size:]
-    return pcm
+    audio_bytes = b"".join(response)
+    if not audio_bytes:
+        logger.error("ElevenLabs returned empty audio for %d characters", len(text))
+        return None
+
+    logger.info(
+        "tts_succeeded provider=elevenlabs len_chars=%d bytes=%d voice_id=%s model_id=%s",
+        len(text),
+        len(audio_bytes),
+        ELEVENLABS_VOICE_ID,
+        ELEVENLABS_MODEL_ID or "default",
+    )
+    return audio_bytes
 
 
 def synthesize_speech(text: str) -> bytes:
-    """Synthesize speech using Piper when configured, otherwise return placeholder bytes."""
+    """Synthesize speech using ElevenLabs when configured, otherwise return placeholder bytes."""
     if not text:
         return b""
 
-    pcm = _synthesize_with_piper(text)
+    pcm = _synthesize_with_elevenlabs(text)
     if pcm is None:
         return _placeholder_response(text)
     return pcm

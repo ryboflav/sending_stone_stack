@@ -62,12 +62,12 @@ The simulator converts the clip to 16 kHz mono PCM16, streams frames to `/ws/aud
 4. Tweak the system prompt in `speaking_stone_edge/system_prompt.txt`, or point `SYSTEM_PROMPT_PATH` at another file; the backend re-reads the file on each LLM call so you can iterate without restarting.
 5. Start the server; the backend will load the API key at startup and `generate_reply` will call OpenRouter’s `/chat/completions` endpoint for every utterance. If the key is missing or a request fails, the system falls back to an “Echoing your words” response so the rest of the pipeline keeps working.
 
-## TTS configuration (Piper)
+## TTS configuration (ElevenLabs)
 
-1. Install the new dependency if you haven’t already:
+1. Install dependencies if you haven’t already:
    ```
    pip install -r requirements.txt
    ```
-2. Download a Piper voice package (both `.onnx` and `.onnx.json`) from the [Piper releases](https://github.com/rhasspy/piper/releases) page and place it somewhere inside the repo, e.g. `tests/data/tts/en_US-amy-low.onnx`.
-3. Update `.env` with `PIPER_MODEL_PATH` (and optionally `PIPER_CONFIG_PATH`, `PIPER_SPEAKER_ID`, `PIPER_USE_CUDA`). See `.env.example` for the variables.
-4. Restart the FastAPI server; `speaking_stone_edge.tts_module` loads the Piper model once at startup and converts replies into 16 kHz PCM16 bytes. If the model isn’t configured or synthesis fails, we fall back to placeholder bytes so the websocket contract stays intact.
+2. Add your ElevenLabs API key to `.env` as `ELEVENLABS_API_KEY` (see `.env.example`).
+3. Optional: set `ELEVENLABS_VOICE_ID` (defaults to Rachel’s public voice) and `ELEVENLABS_MODEL_ID` to force a specific ElevenLabs model.
+4. Restart the FastAPI server; `speaking_stone_edge.tts_module` calls ElevenLabs’ streaming endpoint and returns 16 kHz PCM bytes. If the key is missing or synthesis fails, placeholder bytes are returned so the websocket contract stays intact.
