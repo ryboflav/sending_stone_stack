@@ -188,10 +188,9 @@ install_manifest.txt
 compile_commands.json
 
 # ESP-IDF / build artifacts
-build*/
-!build/CMakeLists.txt  # If you have a custom CMakeLists in build/, consider committing it
-!build/config.env      # If needed, commit specific env configs; otherwise ignore generated
-sdkconfig
+firmware/build/
+firmware/sdkconfig
+firmware/sdkconfig.old
 
 # Logs and temporary files (common in embedded projects)
 *.log
