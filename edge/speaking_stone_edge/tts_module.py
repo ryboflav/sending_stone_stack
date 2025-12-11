@@ -24,6 +24,8 @@ PIPER_CONFIG_PATH = os.getenv("PIPER_CONFIG_PATH")
 PIPER_SPEAKER_ID = os.getenv("PIPER_SPEAKER_ID")
 PIPER_USE_CUDA = os.getenv("PIPER_USE_CUDA", "false").lower() in ("1", "true", "yes", "on")
 TARGET_SAMPLE_RATE = 16000
+TARGET_CHANNELS = 1
+TARGET_SAMPLE_WIDTH = 2  # bytes (16-bit)
 
 
 def _placeholder_response(text: str) -> bytes:
@@ -63,11 +65,20 @@ def _synthesize_with_piper(text: str) -> Optional[bytes]:
     if voice is None:
         return None
 
+    # Resolve speaker selection: only pass sid for multi-speaker models.
+    speaker_id = None
     try:
-        speaker_id = int(PIPER_SPEAKER_ID) if PIPER_SPEAKER_ID else None
-    except ValueError:
-        logger.warning("Invalid PIPER_SPEAKER_ID=%s; ignoring.", PIPER_SPEAKER_ID)
-        speaker_id = None
+        max_speakers = getattr(voice.config, "num_speakers", 1)
+    except Exception:
+        max_speakers = 1
+    if max_speakers > 1:
+        if PIPER_SPEAKER_ID is not None:
+            try:
+                speaker_id = int(PIPER_SPEAKER_ID)
+            except ValueError:
+                logger.warning("Invalid PIPER_SPEAKER_ID=%s; ignoring.", PIPER_SPEAKER_ID)
+        else:
+            speaker_id = 0  # default to first speaker for multi-speaker models
 
     try:
         buffer = io.BytesIO()
@@ -84,7 +95,10 @@ def _synthesize_with_piper(text: str) -> Optional[bytes]:
                 channels,
                 speaker_id,
             )
-            voice.synthesize(text, wav_file, speaker_id=speaker_id)
+            if speaker_id is None:
+                voice.synthesize(text, wav_file)
+            else:
+                voice.synthesize(text, wav_file, speaker_id=speaker_id)
         pcm_with_header = buffer.getvalue()
     except Exception as exc:  # noqa: BLE001
         logger.error("Piper synthesis failed: %s", exc)
