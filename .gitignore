@@ -219,4 +219,7 @@ core
 ehthumbs.db
 Thumbs.db
 
+
+edge/tests/data
+
 # ~~ End of IDE and OS-specific ~~

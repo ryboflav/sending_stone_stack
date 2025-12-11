@@ -59,7 +59,8 @@ The simulator converts the clip to 16 kHz mono PCM16, streams frames to `/ws/aud
    cp .env.example .env
    ```
 3. Populate `OPENROUTER_API_KEY` with your key and (optionally) override `OPENROUTER_MODEL`, `OPENROUTER_REFERRER`, or `OPENROUTER_APP_TITLE`.
-4. Start the server; the backend will load the API key at startup and `generate_reply` will call OpenRouter’s `/chat/completions` endpoint for every utterance. If the key is missing or a request fails, the system falls back to an “Echoing your words” response so the rest of the pipeline keeps working.
+4. Tweak the system prompt in `speaking_stone_edge/system_prompt.txt`, or point `SYSTEM_PROMPT_PATH` at another file; the backend re-reads the file on each LLM call so you can iterate without restarting.
+5. Start the server; the backend will load the API key at startup and `generate_reply` will call OpenRouter’s `/chat/completions` endpoint for every utterance. If the key is missing or a request fails, the system falls back to an “Echoing your words” response so the rest of the pipeline keeps working.
 
 ## TTS configuration (Piper)
 
