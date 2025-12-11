@@ -12,16 +12,16 @@ The ESP32-S3 firmware will use push-to-talk. While the user holds the button the
 
 ## Push-to-talk flow
 
-1. Button press: send a control message telling the server that speech capture started (optional but helps reset buffers).
+1. Button press: send a `MSG_TYPE_CONTROL` event with `event: "reset_buffer"` (this acts as “speech_start”) so the server clears any prior audio for this socket.
 2. Stream frames continually until the button is released. Do not wait to accumulate the entire utterance.
-3. Button release: send a `MSG_TYPE_CONTROL` event such as `speech_end` so the server knows to flush any buffered audio through STT and then reply via TTS.
+3. Button release: send a `MSG_TYPE_CONTROL` event with `event: "speech_end"` so the server knows to flush buffered audio through STT and then reply via TTS. There is no silence/timeout auto-flush.
 
 ## Server expectations
 
-- `audio_websocket` now keeps per-connection state (`AudioStreamBuffer`) where incoming frame payloads are appended.
-- Control messages with `event: "speech_end"` trigger Whisper+LLM+TTS for the buffered audio, and the server replies with a `transcription_ready` control payload plus a binary chunk containing placeholder TTS bytes.
-- `_pcm16_mono_to_float32` already enforces 16-bit mono; any violations or mid-stream parameter changes are reported back as control errors instead of crashing the socket.
-- The initial implementation only flushes on `speech_end`, but once we have empirical latency data we can add time-based or VAD-based flushing.
+- `audio_websocket` keeps per-connection state (`AudioStreamBuffer`) where incoming frame payloads are appended.
+- Control messages with `event: "speech_end"` trigger Whisper+LLM+TTS for the buffered audio, and the server replies with a `transcription_ready` control payload plus one binary payload containing the synthesized PCM. TTS is **single-chunk** today; `MSG_TYPE_TTS_CHUNK` is unused.
+- `_pcm16_mono_to_float32` enforces 16-bit mono; any violations or mid-stream parameter changes are reported back as control errors instead of crashing the socket.
+- There is no time-based/VAD-based flush and no retry/ack for sequence gaps; firmware must send `speech_end` reliably.
 
 ## Why not full-utterance uploads?
 

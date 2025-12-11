@@ -14,6 +14,10 @@
 
 3. Watch the console for control messages and TTS byte counts. The script writes any synthesized reply to `tests/data/audio/output.wav` (16 kHz mono WAV) so you can listen afterward, and the FastAPI server logs print per-stage timing metrics (STT/LLM/TTS + total) for each utterance.
 
+Notes:
+- TTS is returned as a single binary payload immediately after the `transcription_ready` control message (no streaming chunks yet).
+- A `reset_buffer` control event at the start of capture clears any prior audio for the connection; the simulator does not send it, but firmware should.
+
 ## Text-only chat simulator
 
 If you just want to type turns and exercise LLM + TTS (skip STT), start the edge service as above, then run:
