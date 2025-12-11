@@ -72,7 +72,26 @@ def _sanitize_reply(reply: str) -> str:
     return cleaned or reply
 
 
-def generate_reply(text: str) -> str:
+def _build_messages(user_text: str, history: list[Dict[str, str]] | None) -> list[Dict[str, str]]:
+    """Compose the chat payload with optional prior turns."""
+    messages: list[Dict[str, str]] = [
+        {
+            "role": "system",
+            "content": _load_system_prompt(),
+        }
+    ]
+    if history:
+        for turn in history:
+            role = turn.get("role")
+            content = turn.get("content")
+            if not role or not content:
+                continue
+            messages.append({"role": role, "content": content})
+    messages.append({"role": "user", "content": user_text})
+    return messages
+
+
+def generate_reply(text: str, history: list[Dict[str, str]] | None = None) -> str:
     """Send the transcript to OpenRouter and return the assistant reply."""
     fallback = f"Echoing your words: {text}"
     if not text.strip():
@@ -83,13 +102,7 @@ def generate_reply(text: str) -> str:
 
     payload: Dict[str, Any] = {
         "model": OPENROUTER_MODEL,
-        "messages": [
-            {
-                "role": "system",
-                "content": _load_system_prompt(),
-            },
-            {"role": "user", "content": text},
-        ],
+        "messages": _build_messages(text, history),
     }
 
     try:

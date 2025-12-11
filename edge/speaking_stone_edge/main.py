@@ -116,6 +116,7 @@ async def audio_websocket(websocket: WebSocket):
     await websocket.accept()
     await websocket.send_text(protocol.encode_control_message("connected", {"note": "placeholder session"}))
     websocket.state.audio_buffer = AudioStreamBuffer()
+    websocket.state.chat_history: list[dict[str, str]] = []
     client = websocket.client or ("unknown", 0)
     logger.info("websocket_connected client=%s", client)
 
@@ -218,6 +219,21 @@ async def _handle_control_message(websocket: WebSocket, raw_text: str) -> None:
         websocket.state.audio_buffer.clear()
         logger.info("control_event client=%s event=reset_buffer", websocket.client)
         await websocket.send_text(protocol.encode_control_message("ack", {"event": "reset_buffer"}))
+    elif event == "text_input":
+        payload = control.get("payload") or {}
+        try:
+            await _process_text_input(websocket, payload)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("text_input_failed client=%s error=%s", websocket.client, exc)
+            await websocket.send_text(
+                protocol.encode_control_message(
+                    "error",
+                    {
+                        "detail": "text_input_failed",
+                        "error": str(exc),
+                    },
+                )
+            )
     else:
         logger.debug("control_event client=%s event=%s", websocket.client, event)
         await websocket.send_text(protocol.encode_control_message("ack", {"event": event}))
@@ -249,10 +265,15 @@ async def _flush_transcription(websocket: WebSocket) -> None:
         audio_buffer.clear()
         return
 
-    reply_text = generate_reply(transcript)
+    chat_history: list[dict[str, str]] = websocket.state.chat_history
+    reply_text = generate_reply(transcript, chat_history)
     timer.mark("llm")
     tts_bytes = synthesize_speech(reply_text)
     timer.mark("tts")
+
+    # Maintain per-connection history so the LLM can reference prior turns.
+    chat_history.append({"role": "user", "content": transcript})
+    chat_history.append({"role": "assistant", "content": reply_text})
 
     timings = timer.metrics()
     logger.info("timings=%s transcript_len=%d reply_len=%d", timings, len(transcript), len(reply_text))
@@ -277,3 +298,51 @@ async def _flush_transcription(websocket: WebSocket) -> None:
     # TODO: stream synthesized TTS bytes over WebSocket once streaming is implemented.
     await websocket.send_bytes(tts_bytes)
     audio_buffer.clear()
+
+
+async def _process_text_input(websocket: WebSocket, payload: dict) -> None:
+    """Handle a text-only turn (skip STT, run LLM with optional TTS)."""
+    text = (payload.get("text") or "").strip()
+    skip_tts = bool(payload.get("skip_tts"))
+    if not text:
+        await websocket.send_text(protocol.encode_control_message("error", {"detail": "empty text input"}))
+        return
+
+    timer = StageTimer()
+    transcript = text
+    chat_history: list[dict[str, str]] = websocket.state.chat_history
+    reply_text = generate_reply(transcript, chat_history)
+    timer.mark("llm")
+    tts_bytes = b""
+    if not skip_tts:
+        tts_bytes = synthesize_speech(reply_text)
+        timer.mark("tts")
+
+    chat_history.append({"role": "user", "content": transcript})
+    chat_history.append({"role": "assistant", "content": reply_text})
+
+    timings = timer.metrics()
+    logger.info(
+        "text_input_processed client=%s timings=%s transcript_len=%d reply_len=%d skip_tts=%s",
+        websocket.client,
+        timings,
+        len(transcript),
+        len(reply_text),
+        skip_tts,
+    )
+
+    await websocket.send_text(
+        protocol.encode_control_message(
+            "transcription_ready",
+            {
+                "header": None,
+                "payload_bytes": 0,
+                "transcript": transcript,
+                "reply": reply_text,
+                "timings": timings,
+                "tts_skipped": skip_tts,
+            },
+        )
+    )
+    if not skip_tts:
+        await websocket.send_bytes(tts_bytes)
